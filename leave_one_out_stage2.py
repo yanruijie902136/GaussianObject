@@ -107,7 +107,7 @@ def leave_one_out_training(args, dataset, opt, pipe, testing_iterations, saving_
                 if iteration > opt.densify_from_iter and iteration % opt.densification_interval == 0:
                     size_threshold = 20 if iteration > opt.opacity_reset_interval else None
                     gaussians.densify_and_prune(opt.densify_grad_threshold, 0.005, scene.cameras_extent, size_threshold)
-                
+
                 if iteration % opt.opacity_reset_interval == 0 or (dataset.white_background and iteration == opt.densify_from_iter):
                     gaussians.reset_opacity()
 
@@ -140,7 +140,7 @@ def leave_one_out_training(args, dataset, opt, pipe, testing_iterations, saving_
         pickle.dump(diffs, f)
     return dataset, gaussians, scene
 
-def prepare_output_and_logger(args):    
+def prepare_output_and_logger(args):
     if not args.model_path:
         if os.getenv('OAR_JOB_ID'):
             unique_str=os.getenv('OAR_JOB_ID')
@@ -148,7 +148,7 @@ def prepare_output_and_logger(args):
         else:
             unique_str = str(uuid.uuid4())
             args.model_path = os.path.join("./output/", unique_str[0:10])
-        
+
     # Set up output folder
     print("Output folder: {}".format(args.model_path))
     os.makedirs(args.model_path, exist_ok = True)
@@ -172,7 +172,7 @@ def training_report(tb_writer, iteration, Ll1, loss, l1_loss, elapsed, testing_i
     # Report test and samples of training set
     if iteration in testing_iterations:
         torch.cuda.empty_cache()
-        validation_configs = ({'name': 'test', 'cameras' : scene.getTestCameras()}, 
+        validation_configs = ({'name': 'test', 'cameras' : scene.getTestCameras()},
                               {'name': 'train', 'cameras' : [scene.getTrainCameras()[idx % len(scene.getTrainCameras())] for idx in range(5, 30, 5)]})
 
         for config in validation_configs:
@@ -189,7 +189,7 @@ def training_report(tb_writer, iteration, Ll1, loss, l1_loss, elapsed, testing_i
                     l1_test += l1_loss(image, gt_image).mean().double()
                     psnr_test += psnr(image, gt_image).mean().double()
                 psnr_test /= len(config['cameras'])
-                l1_test /= len(config['cameras'])          
+                l1_test /= len(config['cameras'])
                 print("\n[ITER {}] Evaluating {}: L1 {} PSNR {}".format(iteration, config['name'], l1_test, psnr_test))
                 if tb_writer:
                     tb_writer.add_scalar(config['name'] + '/loss_viewpoint - l1_loss', l1_test, iteration)
@@ -221,7 +221,7 @@ def cal_loss(opt, args, image, render_pkg, viewpoint_cam, bg, silhouette_loss_ty
         else:
             raise NotImplementedError
         loss = loss + opt.lambda_silhouette * silhouette_loss
-        
+
     if hasattr(viewpoint_cam, "mono_depth") and  viewpoint_cam.mono_depth is not None:
         if mono_loss_type == "mid":
             # we apply masked monocular loss
@@ -302,7 +302,7 @@ if __name__ == "__main__":
     parser.add_argument("--checkpoint_iterations", nargs="+", type=int, default=[])
     parser.add_argument("--start_checkpoint", type=str, default = None)
     ### some exp args
-    parser.add_argument("--sparse_view_num", type=int, default=-1, 
+    parser.add_argument("--sparse_view_num", type=int, default=-1,
                     help="Use sparse view or dense view, if sparse_view_num > 0, use sparse view, \
                     else use dense view. In sparse setting, sparse views will be used as training data, \
                     others will be used as testing data.")

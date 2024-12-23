@@ -20,7 +20,7 @@ class SceneInfo(NamedTuple):
     Ts: list
     images: list
     masks: list
-    
+
 
 def fov2focal(fov, pixels):
     return pixels / (2 * math.tan(fov / 2))
@@ -44,7 +44,7 @@ def batch_projection(Ks, Ts, points):
     camera_num = Ks.shape[0]
     homopts = points2homopoints(points) # [M, 4]
     # world to camera # [N, M, 4] @ [N, 4, 4] = [N, M, 4]
-    homopts_cam = torch.bmm(homopts.unsqueeze(0).repeat_interleave(Ts.shape[0], dim=0), Ts.transpose(1,2)) 
+    homopts_cam = torch.bmm(homopts.unsqueeze(0).repeat_interleave(Ts.shape[0], dim=0), Ts.transpose(1,2))
     # camera to image space  # [N, M, 4] @ [N, 4, 3] = [N, M, 3]
     homopts_img = torch.bmm(homopts_cam[...,:3], Ks.transpose(1,2))
     # normalize
@@ -121,7 +121,7 @@ def get_visual_hull(N, bbox, scene_info, cam_center):
 
         pcs.append(valid_pt_mask.float().sum(0) >= (images.shape[0] - 1)) # [100, 100]
         color.append(result.mean(0)) # [100, 100, 3]
-    
+
     pcs = torch.stack(pcs, -1)
     color = torch.stack(color, -1)
 
@@ -173,7 +173,7 @@ if __name__=="__main__":
 
     # load the camera parameters
     # we assume that the camera parameters are stored in the data_dir
-    scene_info = sceneLoadTypeCallbacks["Colmap"](args.data_dir, 'images', False, extra_opts=extra_opts) 
+    scene_info = sceneLoadTypeCallbacks["Colmap"](args.data_dir, 'images', False, extra_opts=extra_opts)
     camlist = cameraList_from_camInfos(scene_info.train_cameras, 1.0, extra_opts)
 
     # if sparse id is not zero, we only use given frames to construct the visual hull
@@ -207,7 +207,7 @@ if __name__=="__main__":
     # first, we get the cemera locations center
     cam_center = torch.stack(cam_locations).mean(0)
     print('the camera center is:', cam_center)
- 
+
     Ks = query_from_list_with_list(selected_id, Ks)
     Ts = query_from_list_with_list(selected_id, Ts)
     images = query_from_list_with_list(selected_id, images)
@@ -217,11 +217,11 @@ if __name__=="__main__":
     Ks_clone = copy.deepcopy(Ks)
 
     bx = args.cube_size
-    init_bbox = [[args.cube_size_shift_x-bx, args.cube_size_shift_y-bx, args.cube_size_shift_z-bx], 
+    init_bbox = [[args.cube_size_shift_x-bx, args.cube_size_shift_y-bx, args.cube_size_shift_z-bx],
                  [args.cube_size_shift_x+bx, args.cube_size_shift_y+bx, args.cube_size_shift_z+bx]]
     # we run the get_visual_hull twice, first to get the bound, second to get the visual hull
     pcd, bbox = get_visual_hull(args.voxel_num, init_bbox, scene_info, cam_center)
-    
+
     # since we get the bound, we use this bound to better recon
     # we use the center of the bound as the center of the scene
     # please note that the bbox may need bigger, since the camera may not cover the whole scene
@@ -252,13 +252,13 @@ if __name__=="__main__":
         cameras = ct.camera.create_camera_frames(Ks, Ts, highlight_color_map={0: [1, 0, 0], -1: [0, 1, 0]})
         # build LineSet to represent the coordinate
         world_coord = o3d.geometry.LineSet()
-        world_coord.points = o3d.utility.Vector3dVector(np.array([[0, 0, 0], [2, 0, 0], 
-                                                                [0, 0, 0], [0, 2, 0], 
+        world_coord.points = o3d.utility.Vector3dVector(np.array([[0, 0, 0], [2, 0, 0],
+                                                                [0, 0, 0], [0, 2, 0],
                                                                 [0, 0, 0], [0, 0, 2]]))
         world_coord.lines = o3d.utility.Vector2iVector(np.array([[0, 1], [0, 3], [0, 5]]))
         # X->red, Y->green, Z->blue
         world_coord.colors = o3d.utility.Vector3dVector(np.array([[1, 0, 0], [0, 1, 0], [0, 0, 1]]))
-        
+
         pcdo = o3d.io.read_point_cloud(os.path.join(args.data_dir, "sparse/0/points3D.ply"))
 
         # init viewer
@@ -267,7 +267,7 @@ if __name__=="__main__":
         viewer.add_geometry(cameras)
         viewer.add_geometry(pcd)
         viewer.add_geometry(world_coord)
-    
+
         opt = viewer.get_render_option()
         opt.background_color = np.asarray([0.5, 0.5, 0.5])
         viewer.run()

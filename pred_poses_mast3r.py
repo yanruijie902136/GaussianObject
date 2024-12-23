@@ -51,7 +51,7 @@ def batch_projection(Ks, Ts, points):
     camera_num = Ks.shape[0]
     homopts = points2homopoints(points) # [M, 4]
     # world to camera # [N, M, 4] @ [N, 4, 4] = [N, M, 4]
-    homopts_cam = torch.bmm(homopts.unsqueeze(0).repeat_interleave(Ts.shape[0], dim=0), Ts.transpose(1,2)) 
+    homopts_cam = torch.bmm(homopts.unsqueeze(0).repeat_interleave(Ts.shape[0], dim=0), Ts.transpose(1,2))
     # camera to image space  # [N, M, 4] @ [N, 4, 3] = [N, M, 3]
     homopts_img = torch.bmm(homopts_cam[...,:3], Ks.transpose(1,2))
     # normalize
@@ -104,7 +104,7 @@ def get_visual_hull(N, scale, Ks, Ts, original_images, original_masks):
 
         pcs.append(valid_pt_mask.float().sum(0) >= (images.shape[0] - 1)) # [100, 100]
         color.append(result.mean(0)) # [100, 100, 3]
-    
+
     pcs = torch.stack(pcs, -1)
     color = torch.stack(color, -1)
 

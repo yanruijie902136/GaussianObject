@@ -3,7 +3,7 @@
 # GRAPHDECO research group, https://team.inria.fr/graphdeco
 # All rights reserved.
 #
-# This software is free for non-commercial, research and evaluation use 
+# This software is free for non-commercial, research and evaluation use
 # under the terms of the LICENSE.md file.
 #
 # For inquiries contact  george.drettakis@inria.fr
@@ -185,24 +185,24 @@ def render_set(model_path, name, iteration, views: List[Camera], gaussians, pipe
         gt_path = os.path.join(model_path, name, "ours_{}".format(iteration), "gt.mp4")
         combined_path = os.path.join(model_path, name, "ours_{}".format(iteration), "combined.mp4")
         # Use ffmpeg to output video
-        subprocess.run(["ffmpeg", "-y", 
+        subprocess.run(["ffmpeg", "-y",
                     "-framerate", "24",
-                    "-i", os.path.join(render_path, "%05d.png"), 
+                    "-i", os.path.join(render_path, "%05d.png"),
                     "-vf", "pad=ceil(iw/2)*2:ceil(ih/2)*2",
-                    "-c:v", "libx264", 
-                    "-crf", "23", 
+                    "-c:v", "libx264",
+                    "-crf", "23",
                     # "-pix_fmt", "yuv420p",  # Set pixel format for compatibility
-                    renders_path], 
+                    renders_path],
                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
                     )
-        subprocess.run(["ffmpeg", "-y", 
+        subprocess.run(["ffmpeg", "-y",
                     "-framerate", "24",
-                    "-i", os.path.join(gts_path, "%05d.png"), 
+                    "-i", os.path.join(gts_path, "%05d.png"),
                     "-vf", "pad=ceil(iw/2)*2:ceil(ih/2)*2",
-                    "-c:v", "libx264", 
-                    "-crf", "23", 
+                    "-c:v", "libx264",
+                    "-crf", "23",
                     # "-pix_fmt", "yuv420p",  # Set pixel format for compatibility
-                    gt_path], 
+                    gt_path],
                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
                     )
         # Concatenate the videos vertically using the `concat` filter
@@ -241,7 +241,7 @@ def render_set(model_path, name, iteration, views: List[Camera], gaussians, pipe
             depth_video.write(depth_uint8)
         depth_video.release()
         # due to some bug, we need to use ffmpeg to convert the depth video to mp4
-        subprocess.run(["ffmpeg", "-y", "-i", depth_path, "-c:v", "libx264", "-crf", "23", depth_path.replace(".mp4", "_compressed.mp4")], 
+        subprocess.run(["ffmpeg", "-y", "-i", depth_path, "-c:v", "libx264", "-crf", "23", depth_path.replace(".mp4", "_compressed.mp4")],
                        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         os.remove(depth_path)
 
@@ -310,12 +310,12 @@ def render_path(dataset : ModelParams, iteration : int, pipeline : PipelineParam
     # Use ffmpeg to output video
     renders_path = os.path.join(model_path, name, "ours_{}".format(iteration), "renders.mp4")
     # Use ffmpeg to output video
-    subprocess.run(["ffmpeg", "-y", 
+    subprocess.run(["ffmpeg", "-y",
                 "-framerate", "24",
-                "-i", os.path.join(render_path, "%05d.png"), 
+                "-i", os.path.join(render_path, "%05d.png"),
                 "-vf", "pad=ceil(iw/2)*2:ceil(ih/2)*2",
-                "-c:v", "libx264", 
-                "-crf", "23", 
+                "-c:v", "libx264",
+                "-crf", "23",
                 # "-pix_fmt", "yuv420p",  # Set pixel format for compatibility
                 renders_path], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
                 )
@@ -336,11 +336,11 @@ if __name__ == "__main__":
     parser.add_argument("--render_path", action="store_true")
     parser.add_argument("--render_resize_method", default="crop", type=str)
     ### some exp args
-    parser.add_argument("--sparse_view_num", type=int, default=-1, 
+    parser.add_argument("--sparse_view_num", type=int, default=-1,
                         help="Use sparse view or dense view, if sparse_view_num > 0, use sparse view, \
                         else use dense view. In sparse setting, sparse views will be used as training data, \
                         others will be used as testing data.")
-    parser.add_argument("--init_pcd_name", default='origin', type=str, 
+    parser.add_argument("--init_pcd_name", default='origin', type=str,
                         help="the init pcd name. 'random' for random, 'origin' for pcd from the whole scene")
     parser.add_argument("--use_mask", default=True, help="Use masked image, by default True")
     parser.add_argument('--use_dust3r', action='store_true', default=False,

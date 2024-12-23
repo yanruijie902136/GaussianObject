@@ -3,7 +3,7 @@
 # GRAPHDECO research group, https://team.inria.fr/graphdeco
 # All rights reserved.
 #
-# This software is free for non-commercial, research and evaluation use 
+# This software is free for non-commercial, research and evaluation use
 # under the terms of the LICENSE.md file.
 #
 # For inquiries contact  george.drettakis@inria.fr
@@ -93,7 +93,7 @@ def readColmapCameras(cam_extrinsics, cam_intrinsics, images_folder, extra_opts=
             focal_length_x = intr.params[0]
             FovY = focal2fov(focal_length_x, height)
             FovX = focal2fov(focal_length_x, width)
-        elif intr.model=="PINHOLE": 
+        elif intr.model=="PINHOLE":
             focal_length_x = intr.params[0]
             focal_length_y = intr.params[1]
             FovY = focal2fov(focal_length_y, height)
@@ -118,7 +118,7 @@ def readColmapCameras(cam_extrinsics, cam_intrinsics, images_folder, extra_opts=
         mono_depth = None
 
         cam_info = CameraInfo(uid=uid, R=R, T=T, FovY=FovY, FovX=FovX, image=image,
-                              image_path=image_path, image_name=image_name, 
+                              image_path=image_path, image_name=image_name,
                               width=width, height=height, mask=mask, mono_depth=mono_depth)
         cam_infos.append(cam_info)
     sys.stdout.write('\n')
@@ -140,7 +140,7 @@ def storePly(path, xyz, rgb):
     dtype = [('x', 'f4'), ('y', 'f4'), ('z', 'f4'),
             ('nx', 'f4'), ('ny', 'f4'), ('nz', 'f4'),
             ('red', 'u1'), ('green', 'u1'), ('blue', 'u1')]
-    
+
     normals = np.zeros_like(xyz)
 
     elements = np.empty(xyz.shape[0], dtype=dtype)
@@ -263,7 +263,7 @@ def readColmapSceneInfo(path, images, eval, llffhold=8, extra_opts=None):
             raise NotImplementedError
         else:
             # use specific pointcloud, direct load it
-            pcd = fetchPly(osp.join(path, extra_opts.init_pcd_name if extra_opts.init_pcd_name.endswith(".ply") 
+            pcd = fetchPly(osp.join(path, extra_opts.init_pcd_name if extra_opts.init_pcd_name.endswith(".ply")
                                         else extra_opts.init_pcd_name + ".ply"))
 
 
@@ -376,7 +376,7 @@ def readDust3rSceneInfo(path, images, eval, extra_opts=None):
     render_cam_infos = generate_ellipse_path_from_camera_infos(train_cam_infos)
     nerf_normalization = getNerfppNorm(train_cam_infos)
 
-    ply_path = osp.join(path, extra_opts.init_pcd_name if extra_opts.init_pcd_name.endswith(".ply") 
+    ply_path = osp.join(path, extra_opts.init_pcd_name if extra_opts.init_pcd_name.endswith(".ply")
                                     else extra_opts.init_pcd_name + ".ply")
     pcd = fetchPly(ply_path)
 
