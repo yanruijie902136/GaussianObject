@@ -7,9 +7,6 @@
 [submodule "submodules/minLoRA"]
 	path = submodules/minLoRA
 	url = https://github.com/cccntu/minLoRA
-[submodule "submodules/pytorch3d"]
-	path = submodules/pytorch3d
-	url = https://github.com/facebookresearch/pytorch3d
 [submodule "submodules/CLIP"]
 	path = submodules/CLIP
 	url = https://github.com/openai/CLIP
