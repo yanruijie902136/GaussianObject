@@ -17,6 +17,8 @@ from dust3r.image_pairs import make_pairs
 from dust3r.cloud_opt import global_aligner, GlobalAlignerMode
 from scene.colmap_loader import rotmat2qvec
 
+from progress_bar import *
+
 
 def qvec2rvec(q):
     w, x, y, z = q
@@ -31,10 +33,12 @@ def qvec2rvec(q):
         print('zeros')
         return np.array([0, 0, 0])
 
+
 def points2homopoints(points):
     assert points.shape[-1] == 3
-    bottom = torch.ones_like(points[...,0:1])
+    bottom = torch.ones_like(points[..., 0:1])
     return torch.cat([points, bottom], dim=-1)
+
 
 def batch_projection(Ks, Ts, points):
     '''
@@ -42,23 +46,24 @@ def batch_projection(Ks, Ts, points):
     Ts: B, 4, 4
     points: B, N, 3
     '''
-    pre_fix = points.shape[:-1] # [100, 100]
-    points = points.reshape(-1, 3) # [M, 3]
+    pre_fix = points.shape[:-1]  # [100, 100]
+    points = points.reshape(-1, 3)  # [M, 3]
 
-    Ts = torch.stack(Ts, dim=0) # [N, 4, 4]
-    Ks = torch.stack(Ks, dim=0).to(Ts.device) # [N, 3, 3]
+    Ts = torch.stack(Ts, dim=0)  # [N, 4, 4]
+    Ks = torch.stack(Ks, dim=0).to(Ts.device)  # [N, 3, 3]
     camera_num = Ks.shape[0]
-    homopts = points2homopoints(points) # [M, 4]
+    homopts = points2homopoints(points)  # [M, 4]
     # world to camera # [N, M, 4] @ [N, 4, 4] = [N, M, 4]
-    homopts_cam = torch.bmm(homopts.unsqueeze(0).repeat_interleave(Ts.shape[0], dim=0), Ts.transpose(1,2))
+    homopts_cam = torch.bmm(homopts.unsqueeze(0).repeat_interleave(Ts.shape[0], dim=0), Ts.transpose(1, 2))
     # camera to image space  # [N, M, 4] @ [N, 4, 3] = [N, M, 3]
-    homopts_img = torch.bmm(homopts_cam[...,:3], Ks.transpose(1,2))
+    homopts_img = torch.bmm(homopts_cam[..., :3], Ks.transpose(1, 2))
     # normalize
-    homopts_img = homopts_img / (homopts_img[...,2:] + 1e-6)
+    homopts_img = homopts_img / (homopts_img[..., 2:] + 1e-6)
     # reshape back
     homopts_img = homopts_img.reshape(camera_num, *pre_fix, 3)
     homopts_cam = homopts_cam.reshape(camera_num, *pre_fix, 4)
-    return homopts_img[...,0:2], homopts_cam[...,2]
+    return homopts_img[..., 0:2], homopts_cam[..., 2]
+
 
 @torch.no_grad()
 def get_visual_hull(N, scale, Ks, Ts, original_images, original_masks):
@@ -79,30 +84,32 @@ def get_visual_hull(N, scale, Ks, Ts, original_images, original_masks):
                               torch.linspace(ys, ye, N).cuda())
         i, j = i.t(), j.t()
         pts = torch.stack([i, j, torch.ones_like(i).cuda()], -1)
-        pts[...,2] = h_id / N * (ze - zs) + zs # 100, 100, 3
+        pts[..., 2] = h_id / N * (ze - zs) + zs  # 100, 100, 3
 
         all_pts.append(pts)
 
         # now we have the pts, we need to project them to the image plane
         # batched projection
-        uv, z = batch_projection(Ks, Ts, pts) # [N, 100, 100, 2], [N, 100, 100]
+        uv, z = batch_projection(Ks, Ts, pts)  # [N, 100, 100, 2], [N, 100, 100]
         valid_z_mask = z > 0
-        valid_x_y_mask = (uv[...,0] > 0) & (uv[...,0] < image_width) & (uv[...,1] > 0) & (uv[...,1] < image_height)
+        valid_x_y_mask = (uv[..., 0] > 0) & (uv[..., 0] < image_width) & (uv[..., 1] > 0) & (uv[..., 1] < image_height)
         valid_pt_mask = valid_z_mask & valid_x_y_mask
 
         # simple resize the uv to [-1, 1]
-        uv[...,0] = uv[...,0] / image_width * 2 - 1
-        uv[...,1] = uv[...,1] / image_height * 2 - 1
+        uv[..., 0] = uv[..., 0] / image_width * 2 - 1
+        uv[..., 1] = uv[..., 1] / image_height * 2 - 1
 
         # now we have the uv, we use grid_sample to sample the image to get the color
-        result = F.grid_sample(images.float(), uv, padding_mode='zeros', align_corners=False).permute(0, 2, 3, 1) # N, 100, 100, 3
+        result = F.grid_sample(images.float(), uv, padding_mode='zeros',
+                               align_corners=False).permute(0, 2, 3, 1)  # N, 100, 100, 3
         # sample mask
-        result_mask = F.grid_sample(masks.float(), uv, padding_mode='zeros', align_corners=False).permute(0, 2, 3, 1) # N, 100, 100, 1
+        result_mask = F.grid_sample(masks.float(), uv, padding_mode='zeros',
+                                    align_corners=False).permute(0, 2, 3, 1)  # N, 100, 100, 1
 
         valid_pt_mask = result_mask.squeeze() > 0 & valid_pt_mask
 
-        pcs.append(valid_pt_mask.float().sum(0) >= (images.shape[0] - 1)) # [100, 100]
-        color.append(result.mean(0)) # [100, 100, 3]
+        pcs.append(valid_pt_mask.float().sum(0) >= (images.shape[0] - 1))  # [100, 100]
+        color.append(result.mean(0))  # [100, 100, 3]
 
     pcs = torch.stack(pcs, -1)
     color = torch.stack(color, -1)
@@ -112,14 +119,137 @@ def get_visual_hull(N, scale, Ks, Ts, original_images, original_masks):
 
     color = torch.stack((r[idx] * 255, g[idx] * 255, b[idx] * 255), -1)
 
-    idx = torch.stack([idx[1], idx[0], idx[2]], -1) # note the order is hwz -> xyz
+    idx = torch.stack([idx[1], idx[0], idx[2]], -1)  # note the order is hwz -> xyz
     # turn the idx to the point position used in batch_projection
     idx = idx.float() / N
-    idx[...,0] = idx[...,0] * (xe - xs) + xs
-    idx[...,1] = idx[...,1] * (ye - ys) + ys
-    idx[...,2] = idx[...,2] * (ze - zs) + zs
+    idx[..., 0] = idx[..., 0] * (xe - xs) + xs
+    idx[..., 1] = idx[..., 1] * (ye - ys) + ys
+    idx[..., 2] = idx[..., 2] * (ze - zs) + zs
 
     return idx.cpu().numpy(), color.cpu().numpy() / 255
+
+
+class PredPoses:
+    def __init__(self, wizard=None, progress_bar=None):
+        self.wizard = wizard
+        self.progress_bar = progress_bar
+
+    def main(self, source_path, sparse_num):
+        model_path = 'models/DUSt3R_ViTLarge_BaseDecoder_512_dpt.pth'
+        device = 'cuda'
+        batch_size = 1
+        schedule = 'cosine'
+        lr = 0.01
+        niter = 300
+
+        model = load_model(model_path, device)
+
+        rescale = 1.
+
+        ids = np.loadtxt(os.path.join(source_path, f'sparse_{sparse_num}.txt'), dtype=np.int32)
+        images = sorted(os.listdir(os.path.join(source_path, 'images')))
+        images = [os.path.join(source_path, 'images', images[id]) for id in ids]
+        original_images = [Image.open(image) for image in images]
+        masks = sorted(os.listdir(os.path.join(source_path, 'masks')))
+        masks = [os.path.join(source_path, 'masks', masks[id]) for id in ids]
+        original_masks = [np.array(Image.open(mask).resize(image.size)) /
+                          255.0 for mask, image in zip(masks, original_images)]
+
+        loaded_images = load_images(images, size=512)
+        pairs = make_pairs(loaded_images, scene_graph='complete', prefilter=None, symmetrize=True)
+
+        if self.wizard is not None:
+            maximum = len(range(0, len(pairs), batch_size)) + niter
+            set_progress_bar(self.wizard, self.progress_bar, maximum)
+
+        output = inference(pairs, model, device, batch_size=batch_size)
+        scene = global_aligner(output, device=device, mode=GlobalAlignerMode.PointCloudOptimizer)
+        loss = scene.compute_global_alignment(init="mst", niter=niter, schedule=schedule, lr=lr)
+
+        clear_progress_bar()
+
+        imgs = scene.imgs
+        focals = scene.get_focals()
+        poses = scene.get_im_poses()
+        pts3d = scene.get_pts3d()
+        depths = scene.get_depthmaps()
+        confidence_masks = scene.get_masks()
+        confidences = scene.get_conf()
+
+        mask_mesh = to_numpy(scene.get_masks())
+        pts3d_mesh = to_numpy(scene.get_pts3d())
+        meshes = cat_meshes([pts3d_to_trimesh(imgs[i], pts3d_mesh[i], mask_mesh[i]) for i in range(len(imgs))])
+
+        used_verts = set()
+        for i, j, k in meshes['faces']:
+            used_verts.add(i)
+            used_verts.add(j)
+            used_verts.add(k)
+        used_verts = np.array(list(used_verts))
+
+        vertices = meshes['vertices'][used_verts]
+        colors = meshes['vertice_colors'][used_verts]
+
+        visibility = np.ones(vertices.shape[0], dtype=bool)
+        for pose, focal, image, mask in zip(poses, focals, original_images, original_masks):
+            width, height = image.size
+            K = np.array([[focal.item() / 512 * max(height, width), 0, width / 2],
+                          [0, focal.item() / 512 * max(height, width), height / 2], [0, 0, 1]])
+
+            c2w = pose.detach().cpu().numpy()
+            w2c = np.linalg.inv(c2w)
+            R = w2c[:3, :3].T
+            T = w2c[:3, 3]
+
+            R = rotmat2qvec(np.transpose(R))
+            R = qvec2rvec(R)
+            points_2d, _ = cv2.projectPoints(vertices, R, T, K, distCoeffs=None)
+            h, w = mask.shape
+
+            visibility[points_2d[:, 0, 1] < 0] = 0
+            visibility[points_2d[:, 0, 1] >= h] = 0
+            visibility[points_2d[:, 0, 0] < 0] = 0
+            visibility[points_2d[:, 0, 0] >= w] = 0
+            coords = points_2d.astype(np.int32)
+            coords[coords < 0] = 0
+            coords[:, 0, 1][coords[:, 0, 1] >= h] = h - 1
+            coords[:, 0, 0][coords[:, 0, 0] >= w] = w - 1
+            visibility[mask[coords[:, 0, 1], coords[:, 0, 0]] < 0.5] = 0
+
+        vertices = vertices[visibility]
+        colors = colors[visibility]
+
+        center = np.mean(vertices, axis=0)
+        vertices -= center
+        max_bbox = np.abs(vertices).max()
+        vertices = vertices / max_bbox * rescale
+
+        poses[:, :3, 3] = (poses[:, :3, 3] - torch.tensor(center).to(device)) / max_bbox * rescale
+
+        depths = np.array([depth.detach().cpu().numpy() for depth in depths])
+        depths = depths / max_bbox * rescale
+        np.save(os.path.join(source_path, f'dust3r_depth_{sparse_num}.npy'), depths)
+        confidences = np.array([confidence.detach().cpu().numpy() for confidence in confidences])
+        np.save(os.path.join(source_path, f'dust3r_confidence_{sparse_num}.npy'), confidences)
+
+        cameras = []
+        for i in range(sparse_num):
+            cameras.append({
+                'id': i,
+                'img_name': os.path.basename(images[i]),
+                'width': original_images[i].size[0],
+                'height': original_images[i].size[1],
+                'position': poses[i, :3, 3].tolist(),
+                'rotation': poses[i, :3, :3].tolist(),
+                'fy': focals[i].item() / 512 * max(original_images[i].size),
+                'fx': focals[i].item() / 512 * max(original_images[i].size),
+            })
+        with open(os.path.join(source_path, f'dust3r_{sparse_num}.json'), 'w') as f:
+            json.dump(cameras, f, indent=4)
+
+        cloud = trimesh.PointCloud(vertices, colors)
+        cloud.export(os.path.join(source_path, f'dust3r_{sparse_num}.ply'))
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
@@ -127,111 +257,4 @@ if __name__ == "__main__":
     parser.add_argument('--sparse_num', type=int, default=4)
     args = parser.parse_args()
 
-    model_path = 'models/DUSt3R_ViTLarge_BaseDecoder_512_dpt.pth'
-    device = 'cuda'
-    batch_size = 1
-    schedule = 'cosine'
-    lr = 0.01
-    niter = 300
-
-    model = load_model(model_path, device)
-
-    sparse_num = args.sparse_num
-    rescale = 1.
-
-    scene_path = args.source_path
-    ids = np.loadtxt(os.path.join(scene_path, f'sparse_{sparse_num}.txt'), dtype=np.int32)
-    images = sorted(os.listdir(os.path.join(scene_path, 'images')))
-    images = [os.path.join(scene_path, 'images', images[id]) for id in ids]
-    original_images = [Image.open(image) for image in images]
-    masks = sorted(os.listdir(os.path.join(scene_path, 'masks')))
-    masks = [os.path.join(scene_path, 'masks', masks[id]) for id in ids]
-    original_masks = [np.array(Image.open(mask).resize(image.size)) / 255.0 for mask, image in zip(masks, original_images)]
-
-    loaded_images = load_images(images, size=512)
-    pairs = make_pairs(loaded_images, scene_graph='complete', prefilter=None, symmetrize=True)
-    output = inference(pairs, model, device, batch_size=batch_size)
-    scene = global_aligner(output, device=device, mode=GlobalAlignerMode.PointCloudOptimizer)
-    loss = scene.compute_global_alignment(init="mst", niter=niter, schedule=schedule, lr=lr)
-
-    imgs = scene.imgs
-    focals = scene.get_focals()
-    poses = scene.get_im_poses()
-    pts3d = scene.get_pts3d()
-    depths = scene.get_depthmaps()
-    confidence_masks = scene.get_masks()
-    confidences = scene.get_conf()
-
-    mask_mesh = to_numpy(scene.get_masks())
-    pts3d_mesh = to_numpy(scene.get_pts3d())
-    meshes = cat_meshes([pts3d_to_trimesh(imgs[i], pts3d_mesh[i], mask_mesh[i]) for i in range(len(imgs))])
-
-    used_verts = set()
-    for i, j, k in meshes['faces']:
-        used_verts.add(i)
-        used_verts.add(j)
-        used_verts.add(k)
-    used_verts = np.array(list(used_verts))
-
-    vertices =  meshes['vertices'][used_verts]
-    colors = meshes['vertice_colors'][used_verts]
-
-    visibility = np.ones(vertices.shape[0], dtype=bool)
-    for pose, focal, image, mask in zip(poses, focals, original_images, original_masks):
-        width, height = image.size
-        K = np.array([[focal.item() / 512 * max(height, width), 0, width / 2], [0, focal.item() / 512 * max(height, width), height / 2], [0, 0, 1]])
-
-        c2w = pose.detach().cpu().numpy()
-        w2c = np.linalg.inv(c2w)
-        R = w2c[:3, :3].T
-        T = w2c[:3, 3]
-
-        R = rotmat2qvec(np.transpose(R))
-        R = qvec2rvec(R)
-        points_2d, _ = cv2.projectPoints(vertices, R, T, K, distCoeffs=None)
-        h, w = mask.shape
-
-        visibility[points_2d[:, 0, 1] < 0] = 0
-        visibility[points_2d[:, 0, 1] >= h] = 0
-        visibility[points_2d[:, 0, 0] < 0] = 0
-        visibility[points_2d[:, 0, 0] >= w] = 0
-        coords = points_2d.astype(np.int32)
-        coords[coords < 0] = 0
-        coords[:, 0, 1][coords[:, 0, 1] >= h] = h - 1
-        coords[:, 0, 0][coords[:, 0, 0] >= w] = w - 1
-        visibility[mask[coords[:, 0, 1], coords[:, 0, 0]] < 0.5] = 0
-
-    vertices = vertices[visibility]
-    colors = colors[visibility]
-
-    center = np.mean(vertices, axis=0)
-    vertices -= center
-    max_bbox = np.abs(vertices).max()
-    vertices = vertices / max_bbox * rescale
-
-    poses[:, :3, 3] = (poses[:, :3, 3] - torch.tensor(center).to(device)) / max_bbox * rescale
-
-    depths = np.array([depth.detach().cpu().numpy() for depth in depths])
-    depths = depths / max_bbox * rescale
-    np.save(os.path.join(scene_path, f'dust3r_depth_{sparse_num}.npy'), depths)
-    confidences = np.array([confidence.detach().cpu().numpy() for confidence in confidences])
-    np.save(os.path.join(scene_path, f'dust3r_confidence_{sparse_num}.npy'), confidences)
-
-    cameras = []
-    for i in range(sparse_num):
-        cameras.append({
-            'id': i,
-            'img_name': os.path.basename(images[i]),
-            'width': original_images[i].size[0],
-            'height': original_images[i].size[1],
-            'position': poses[i, :3, 3].tolist(),
-            'rotation': poses[i, :3, :3].tolist(),
-            'fy': focals[i].item() / 512 * max(original_images[i].size),
-            'fx': focals[i].item() / 512 * max(original_images[i].size),
-        })
-    with open(os.path.join(scene_path, f'dust3r_{sparse_num}.json'), 'w') as f:
-        json.dump(cameras, f, indent=4)
-
-    cloud = trimesh.PointCloud(vertices, colors)
-    cloud.export(os.path.join(scene_path, f'dust3r_{sparse_num}.ply'))
-
+    PredPoses().main(args.source_path, args.sparse_num)

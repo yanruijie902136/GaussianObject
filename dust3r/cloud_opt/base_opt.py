@@ -23,6 +23,8 @@ from dust3r.cloud_opt.commons import (edge_str, ALL_DISTS, NoGradParamDict, get_
                                       cosine_schedule, linear_schedule, get_conf_trf)
 import dust3r.cloud_opt.init_im_poses as init_fun
 
+from progress_bar import *
+
 
 class BasePCOptimizer (nn.Module):
     """ Optimize a global scene, given a list of pairwise observations.
@@ -33,9 +35,9 @@ class BasePCOptimizer (nn.Module):
     def __init__(self, *args, **kwargs):
         if len(args) == 1 and len(kwargs) == 0:
             other = deepcopy(args[0])
-            attrs = '''edges is_symmetrized dist n_imgs pred_i pred_j imshapes 
+            attrs = '''edges is_symmetrized dist n_imgs pred_i pred_j imshapes
                         min_conf_thr conf_thr conf_i conf_j im_conf
-                        base_scale norm_pw_scale POSE_DIM pw_poses 
+                        base_scale norm_pw_scale POSE_DIM pw_poses
                         pw_adaptors pw_adaptors has_im_poses rand_pose imgs verbose'''.split()
             self.__dict__.update({k: other[k] for k in attrs})
         else:
@@ -337,15 +339,11 @@ def global_alignment_loop(net, lr=0.01, niter=300, schedule='cosine', lr_min=1e-
     optimizer = torch.optim.Adam(params, lr=lr, betas=(0.9, 0.9))
 
     loss = float('inf')
-    if verbose:
-        with tqdm.tqdm(total=niter) as bar:
-            while bar.n < bar.total:
-                loss, lr = global_alignment_iter(net, bar.n, niter, lr_base, lr_min, optimizer, schedule)
-                bar.set_postfix_str(f'{lr=:g} loss={loss:g}')
-                bar.update()
-    else:
-        for n in range(niter):
-            loss, _ = global_alignment_iter(net, n, niter, lr_base, lr_min, optimizer, schedule)
+
+    for n in range(niter):
+        loss, _ = global_alignment_iter(net, n, niter, lr_base, lr_min, optimizer, schedule)
+        progress_bar_step()
+
     return loss
 
 
@@ -367,9 +365,9 @@ def global_alignment_iter(net, cur_iter, niter, lr_base, lr_min, optimizer, sche
 
 
 @torch.no_grad()
-def clean_pointcloud( im_confs, K, cams, depthmaps, all_pts3d, 
-                      tol=0.001, bad_conf=0, dbg=()):
-    """ Method: 
+def clean_pointcloud(im_confs, K, cams, depthmaps, all_pts3d,
+                     tol=0.001, bad_conf=0, dbg=()):
+    """ Method:
     1) express all 3d points in each camera coordinate frame
     2) if they're in front of a depthmap --> then lower their confidence
     """
@@ -378,17 +376,18 @@ def clean_pointcloud( im_confs, K, cams, depthmaps, all_pts3d,
     res = [c.clone() for c in im_confs]
 
     # reshape appropriately
-    all_pts3d = [p.view(*c.shape,3) for p,c in zip(all_pts3d, im_confs)]
-    depthmaps = [d.view(*c.shape) for d,c in zip(depthmaps, im_confs)]
-    
+    all_pts3d = [p.view(*c.shape, 3) for p, c in zip(all_pts3d, im_confs)]
+    depthmaps = [d.view(*c.shape) for d, c in zip(depthmaps, im_confs)]
+
     for i, pts3d in enumerate(all_pts3d):
         for j in range(len(all_pts3d)):
-            if i == j: continue
+            if i == j:
+                continue
 
             # project 3dpts in other view
             proj = geotrf(cams[j], pts3d)
-            proj_depth = proj[:,:,2]
-            u,v = geotrf(K[j], proj, norm=1, ncol=2).round().long().unbind(-1)
+            proj_depth = proj[:, :, 2]
+            u, v = geotrf(K[j], proj, norm=1, ncol=2).round().long().unbind(-1)
 
             # check which points are actually in the visible cone
             H, W = im_confs[j].shape
