@@ -28,6 +28,7 @@ from tqdm import tqdm
 from arguments import ModelParams, PipelineParams, get_combined_args
 from gaussian_renderer import GaussianModel, render, render_w_pose
 import lpips
+from progress_bar import *
 from scene import Scene
 from utils.general_utils import safe_state
 from utils.image_utils import psnr
@@ -49,7 +50,8 @@ def readImages(renders_dir, gt_dir):
         image_names.append(fname)
     return renders, gts, image_names
 
-def evaluate(model_paths):
+
+def evaluate(lpips_fn, model_paths):
 
     full_dict = {}
     per_view_dict = {}
@@ -75,7 +77,7 @@ def evaluate(model_paths):
             per_view_dict_polytopeonly[scene_dir][method] = {}
 
             method_dir = test_dir / method
-            gt_dir = method_dir/ "gt"
+            gt_dir = method_dir / "gt"
             renders_dir = method_dir / "renders"
             renders, gts, image_names = readImages(renders_dir, gt_dir)
 
@@ -98,18 +100,19 @@ def evaluate(model_paths):
             print("")
 
             full_dict[scene_dir][method].update({"SSIM": torch.tensor(ssims).mean().item(),
-                                                    "PSNR": torch.tensor(psnrs).mean().item(),
-                                                    "LPIPS": torch.tensor(lpipss).mean().item()})
+                                                 "PSNR": torch.tensor(psnrs).mean().item(),
+                                                 "LPIPS": torch.tensor(lpipss).mean().item()})
             per_view_dict[scene_dir][method].update({"SSIM": {name: ssim for ssim, name in zip(torch.tensor(ssims).tolist(), image_names)},
-                                                        "PSNR": {name: psnr for psnr, name in zip(torch.tensor(psnrs).tolist(), image_names)},
-                                                        "LPIPS": {name: lp for lp, name in zip(torch.tensor(lpipss).tolist(), image_names)}})
+                                                     "PSNR": {name: psnr for psnr, name in zip(torch.tensor(psnrs).tolist(), image_names)},
+                                                     "LPIPS": {name: lp for lp, name in zip(torch.tensor(lpipss).tolist(), image_names)}})
 
         with open(scene_dir + "/results.json", 'w') as fp:
             json.dump(full_dict[scene_dir], fp, indent=True)
         with open(scene_dir + "/per_view.json", 'w') as fp:
             json.dump(per_view_dict[scene_dir], fp, indent=True)
 
-def render_set(model_path, name, iteration, views: List[Camera], gaussians, pipeline, background, save_images=True, not_generate_video=False, refine_iters=0, extra_opts=None):
+
+def render_set(lpips_fn, model_path, name, iteration, views: List[Camera], gaussians, pipeline, background, save_images=True, not_generate_video=False, refine_iters=0, extra_opts=None):
     if extra_opts and extra_opts.use_dust3r:
         from gaussian_renderer import render_w_pose as render
     else:
@@ -166,7 +169,7 @@ def render_set(model_path, name, iteration, views: List[Camera], gaussians, pipe
         gt = view.original_image[0:3, :, :]
         ssims += ssim(rendering, gt).mean().item()
         psnrs += psnr(rendering, gt).mean().item()
-        lpipss += lpips_fn(rendering, gt).item() # NCHW
+        lpipss += lpips_fn(rendering, gt).item()  # NCHW
         if save_images:
             torchvision.utils.save_image(rendering, os.path.join(render_path, '{0:05d}'.format(idx) + ".png"))
             torchvision.utils.save_image(gt, os.path.join(gts_path, '{0:05d}'.format(idx) + ".png"))
@@ -177,7 +180,8 @@ def render_set(model_path, name, iteration, views: List[Camera], gaussians, pipe
 
     # since the eval is done in the render function, just dump the results to json
     with open(os.path.join(model_path, name, "ours_{}".format(iteration), "results.json"), 'w') as fp:
-        json.dump({"SSIM": ssims / len(views), "PSNR": psnrs / len(views), "LPIPS": lpipss / len(views)}, fp, indent=True)
+        json.dump({"SSIM": ssims / len(views), "PSNR": psnrs / len(views),
+                  "LPIPS": lpipss / len(views)}, fp, indent=True)
 
     # Use ffmpeg to output video
     if not not_generate_video:
@@ -186,39 +190,40 @@ def render_set(model_path, name, iteration, views: List[Camera], gaussians, pipe
         combined_path = os.path.join(model_path, name, "ours_{}".format(iteration), "combined.mp4")
         # Use ffmpeg to output video
         subprocess.run(["ffmpeg", "-y",
-                    "-framerate", "24",
-                    "-i", os.path.join(render_path, "%05d.png"),
-                    "-vf", "pad=ceil(iw/2)*2:ceil(ih/2)*2",
-                    "-c:v", "libx264",
-                    "-crf", "23",
-                    # "-pix_fmt", "yuv420p",  # Set pixel format for compatibility
-                    renders_path],
-                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
-                    )
+                        "-framerate", "24",
+                        "-i", os.path.join(render_path, "%05d.png"),
+                        "-vf", "pad=ceil(iw/2)*2:ceil(ih/2)*2",
+                        "-c:v", "libx264",
+                        "-crf", "23",
+                        # "-pix_fmt", "yuv420p",  # Set pixel format for compatibility
+                        renders_path],
+                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+                       )
         subprocess.run(["ffmpeg", "-y",
-                    "-framerate", "24",
-                    "-i", os.path.join(gts_path, "%05d.png"),
-                    "-vf", "pad=ceil(iw/2)*2:ceil(ih/2)*2",
-                    "-c:v", "libx264",
-                    "-crf", "23",
-                    # "-pix_fmt", "yuv420p",  # Set pixel format for compatibility
-                    gt_path],
-                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
-                    )
+                        "-framerate", "24",
+                        "-i", os.path.join(gts_path, "%05d.png"),
+                        "-vf", "pad=ceil(iw/2)*2:ceil(ih/2)*2",
+                        "-c:v", "libx264",
+                        "-crf", "23",
+                        # "-pix_fmt", "yuv420p",  # Set pixel format for compatibility
+                        gt_path],
+                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+                       )
         # Concatenate the videos vertically using the `concat` filter
         command = [
-            "ffmpeg","-y",
-            "-i",renders_path,
-            "-i",gt_path,
-            "-filter_complex","[0:v][1:v]hstack=inputs=2[v]",
-            "-map","[v]",
-            "-c:v","libx264",
-            "-crf","23",
+            "ffmpeg", "-y",
+            "-i", renders_path,
+            "-i", gt_path,
+            "-filter_complex", "[0:v][1:v]hstack=inputs=2[v]",
+            "-map", "[v]",
+            "-c:v", "libx264",
+            "-crf", "23",
             "-pix_fmt", "yuv420p",  # Set pixel format for compatibility
             combined_path
         ]
         # Run the command
-        subprocess.run(command, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL) # , stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+        # , stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+        subprocess.run(command, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
         # Remove the original videos
         os.remove(renders_path)
@@ -228,11 +233,12 @@ def render_set(model_path, name, iteration, views: List[Camera], gaussians, pipe
         # import pdb
         # pdb.set_trace()
         depth_path = os.path.join(model_path, name, "ours_{}".format(iteration), "depth.mp4")
-        depth_video = cv2.VideoWriter(depth_path, cv2.VideoWriter_fourcc(*'mp4v'), 24, (depths[0].shape[1], depths[0].shape[0]), False)
+        depth_video = cv2.VideoWriter(depth_path, cv2.VideoWriter_fourcc(*'mp4v'), 24,
+                                      (depths[0].shape[1], depths[0].shape[0]), False)
         for depth in depths:
             # opencv need to convert to uint8
             if depth.max() > 0:
-                depth[depth <= 0] = depth[depth>0].min()
+                depth[depth <= 0] = depth[depth > 0].min()
                 depth_normalized = cv2.normalize(depth, depth, 0.0, 1.0, cv2.NORM_MINMAX)
             else:
                 depth_normalized = np.zeros_like(depth)
@@ -245,33 +251,40 @@ def render_set(model_path, name, iteration, views: List[Camera], gaussians, pipe
                        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         os.remove(depth_path)
 
-def render_sets(dataset : ModelParams, iteration : int, pipeline : PipelineParams, skip_train : bool, skip_test : bool, skip_all : bool, extra_opts=None):
+
+def render_sets(lpips_fn, dataset: ModelParams, iteration: int, pipeline: PipelineParams, skip_train: bool, skip_test: bool, skip_all: bool, extra_opts=None):
     # with torch.no_grad():
     load_ply = None if extra_opts.load_ply == 'origin' else extra_opts.load_ply
     gaussians = GaussianModel(dataset.sh_degree)
-    scene = Scene(dataset, gaussians, load_iteration=iteration, shuffle=False, extra_opts=extra_opts, load_ply=load_ply)
+    scene = Scene(dataset, gaussians, load_iteration=iteration,
+                  shuffle=False, extra_opts=extra_opts, load_ply=load_ply)
 
-    bg_color = [1,1,1] if dataset.white_background else [0, 0, 0]
+    bg_color = [1, 1, 1] if dataset.white_background else [0, 0, 0]
     background = torch.tensor(bg_color, dtype=torch.float32, device="cuda")
 
     if not skip_train:
-        render_set(dataset.model_path, "train", scene.loaded_iter, scene.getTrainCameras(), gaussians, pipeline, background, not_generate_video=extra_opts.not_generate_video, save_images=not extra_opts.not_saveimages, refine_iters=0, extra_opts=extra_opts)
+        render_set(lpips_fn, dataset.model_path, "train", scene.loaded_iter, scene.getTrainCameras(), gaussians, pipeline, background,
+                   not_generate_video=extra_opts.not_generate_video, save_images=not extra_opts.not_saveimages, refine_iters=0, extra_opts=extra_opts)
 
     if not skip_test and len(scene.getTestCameras()) > 0:
-        render_set(dataset.model_path, "test", scene.loaded_iter, scene.getTestCameras(), gaussians, pipeline, background, not_generate_video=extra_opts.not_generate_video, save_images=not extra_opts.not_saveimages, refine_iters=extra_opts.refine_iters, extra_opts=extra_opts)
+        render_set(lpips_fn, dataset.model_path, "test", scene.loaded_iter, scene.getTestCameras(), gaussians, pipeline, background,
+                   not_generate_video=extra_opts.not_generate_video, save_images=not extra_opts.not_saveimages, refine_iters=extra_opts.refine_iters, extra_opts=extra_opts)
 
     if not skip_all:
-        render_set(dataset.model_path, "all", scene.loaded_iter, scene.getAllCameras(), gaussians, pipeline, background, not_generate_video=extra_opts.not_generate_video, save_images=not extra_opts.not_saveimages, refine_iters=0, extra_opts=extra_opts)
+        render_set(lpips_fn, dataset.model_path, "all", scene.loaded_iter, scene.getAllCameras(), gaussians, pipeline, background,
+                   not_generate_video=extra_opts.not_generate_video, save_images=not extra_opts.not_saveimages, refine_iters=0, extra_opts=extra_opts)
+
 
 @torch.no_grad()
-def render_path(dataset : ModelParams, iteration : int, pipeline : PipelineParams, extra_opts=None):
+def render_path(args, dataset: ModelParams, iteration: int, pipeline: PipelineParams, extra_opts=None, conn=None):
     load_ply = None if extra_opts.load_ply == 'origin' else extra_opts.load_ply
     gaussians = GaussianModel(dataset.sh_degree)
-    scene = Scene(dataset, gaussians, load_iteration=iteration, shuffle=False, extra_opts=extra_opts, load_ply=load_ply)
+    scene = Scene(dataset, gaussians, load_iteration=iteration,
+                  shuffle=False, extra_opts=extra_opts, load_ply=load_ply)
 
     iteration = scene.loaded_iter
 
-    bg_color = [1,1,1] if dataset.white_background else [0, 0, 0]
+    bg_color = [1, 1, 1] if dataset.white_background else [0, 0, 0]
     background = torch.tensor(bg_color, dtype=torch.float32, device="cuda")
 
     model_path = dataset.model_path
@@ -283,6 +296,9 @@ def render_path(dataset : ModelParams, iteration : int, pipeline : PipelineParam
     render_path = os.path.join(model_path, name, "ours_{}".format(iteration), "renders")
 
     makedirs(render_path, exist_ok=True)
+
+    if conn is not None:
+        create_progress_bar(conn, len(views))
 
     depths = []
     for idx, view in enumerate(tqdm(views, desc="Rendering progress")):
@@ -299,28 +315,39 @@ def render_path(dataset : ModelParams, iteration : int, pipeline : PipelineParam
         view.image_height = image_size
         view.FoVx = focal2fov(focal_length_x, image_size)
         view.FoVy = focal2fov(focal_length_y, image_size)
-        view.projection_matrix = getProjectionMatrix(znear=view.znear, zfar=view.zfar, fovX=view.FoVx, fovY=view.FoVy).transpose(0,1).cuda().float()
-        view.full_proj_transform = (view.world_view_transform.unsqueeze(0).bmm(view.projection_matrix.unsqueeze(0))).squeeze(0)
+        view.projection_matrix = getProjectionMatrix(
+            znear=view.znear, zfar=view.zfar, fovX=view.FoVx, fovY=view.FoVy).transpose(0, 1).cuda().float()
+        view.full_proj_transform = (view.world_view_transform.unsqueeze(
+            0).bmm(view.projection_matrix.unsqueeze(0))).squeeze(0)
 
         render_pkg = render(view, gaussians, pipeline, background)
         rendering = render_pkg["render"]
         depths.append(render_pkg["rendered_depth"].cpu().numpy()[0])
         torchvision.utils.save_image(rendering, os.path.join(render_path, '{0:05d}'.format(idx) + ".png"))
 
+        progress_bar_step(1)
+
     # Use ffmpeg to output video
     renders_path = os.path.join(model_path, name, "ours_{}".format(iteration), "renders.mp4")
     # Use ffmpeg to output video
     subprocess.run(["ffmpeg", "-y",
-                "-framerate", "24",
-                "-i", os.path.join(render_path, "%05d.png"),
-                "-vf", "pad=ceil(iw/2)*2:ceil(ih/2)*2",
-                "-c:v", "libx264",
-                "-crf", "23",
-                # "-pix_fmt", "yuv420p",  # Set pixel format for compatibility
-                renders_path], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
-                )
+                    "-framerate", "24",
+                    "-i", os.path.join(render_path, "%05d.png"),
+                    "-vf", "pad=ceil(iw/2)*2:ceil(ih/2)*2",
+                    "-c:v", "h264",
+                    "-crf", "23",
+                    # "-pix_fmt", "yuv420p",  # Set pixel format for compatibility
+                    renders_path], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+                   )
 
-if __name__ == "__main__":
+    remove_progress_bar()
+
+    if conn is not None:
+        with open(renders_path, mode="rb") as file:
+            conn.send(file.read())
+
+
+def main(argv=None, conn=None):
     # Set up command line argument parser
     parser = ArgumentParser(description="Testing script parameters")
     model = ModelParams(parser, sentinel=True)
@@ -335,7 +362,7 @@ if __name__ == "__main__":
     parser.add_argument("--is_eval", action="store_true")
     parser.add_argument("--render_path", action="store_true")
     parser.add_argument("--render_resize_method", default="crop", type=str)
-    ### some exp args
+    # some exp args
     parser.add_argument("--sparse_view_num", type=int, default=-1,
                         help="Use sparse view or dense view, if sparse_view_num > 0, use sparse view, \
                         else use dense view. In sparse setting, sparse views will be used as training data, \
@@ -349,7 +376,7 @@ if __name__ == "__main__":
     parser.add_argument('--refine_iters', type=int, default=0)
     parser.add_argument("--transform_the_world", action="store_true", help="Transform the world to the origin")
     parser.add_argument("--load_ply", default="origin", type=str, help="Load other ply as init")
-    args = get_combined_args(parser)
+    args = get_combined_args(parser, cmdlne_string=argv)
     print("Rendering " + args.model_path)
     lpips_fn = lpips.LPIPS(net='vgg').cuda()
     # Initialize system state (RNG)
@@ -358,11 +385,16 @@ if __name__ == "__main__":
     # sometimes we only want to render the images, and do not want to evaluate the metrics
     if args.is_eval:
         with torch.no_grad():
-            evaluate([args.model_path])
-        exit()
+            evaluate(lpips_fn, [args.model_path])
+        return
 
     if args.render_path:
-        render_path(model.extract(args), args.iteration, pipeline.extract(args), extra_opts = args)
-        exit()
+        render_path(args, model.extract(args), args.iteration, pipeline.extract(args), extra_opts=args, conn=conn)
+        return
 
-    render_sets(model.extract(args), args.iteration, pipeline.extract(args), args.skip_train, args.skip_test, args.skip_all, extra_opts = args)
+    render_sets(lpips_fn, model.extract(args), args.iteration, pipeline.extract(args),
+                args.skip_train, args.skip_test, args.skip_all, extra_opts=args)
+
+
+if __name__ == "__main__":
+    main()

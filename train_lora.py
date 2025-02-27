@@ -11,11 +11,11 @@ from cldm.logger import ImageLogger, LoraCheckpoint
 from dataset_lora import GSCacheDataset
 from torch.utils.data import DataLoader
 from minlora import add_lora, LoRAParametrization
+from progress_bar import *
 
-_ = torch.set_grad_enabled(False)
 
-
-if __name__ == '__main__':
+@torch.no_grad()
+def main(argv=None, conn=None):
     parser = argparse.ArgumentParser(description='Process experiment parameters.')
 
     parser.add_argument('--model_name', type=str, default='control_v11f1e_sd15_tile')
@@ -46,7 +46,10 @@ if __name__ == '__main__':
     parser.add_argument('--add_clip_lora', action='store_true', default=False)
     parser.add_argument('--use_dust3r', action='store_true', default=False)
 
-    args = parser.parse_args()
+    if argv is None:
+        args = parser.parse_args()
+    else:
+        args = parser.parse_args(argv)
 
     model = create_model(f'./models/{args.model_name}.yaml').cpu()
     model.load_state_dict(load_state_dict('./models/v1-5-pruned.ckpt', location='cpu'), strict=False)
@@ -99,11 +102,15 @@ if __name__ == '__main__':
     loggers = [
         TensorBoardLogger(os.path.join(exp_path, 'tf_logs'))
     ]
+
     callbacks = [
-        ImageLogger(exp_dir=exp_path, every_n_train_steps=args.callbacks_every_n_train_steps, \
-                    log_images_kwargs = {"plot_diffusion_rows": True, "sample": True}),
+        ImageLogger(exp_dir=exp_path, every_n_train_steps=args.callbacks_every_n_train_steps,
+                    log_images_kwargs={"plot_diffusion_rows": True, "sample": True}),
         LoraCheckpoint(exp_dir=exp_path, every_n_train_steps=args.callbacks_every_n_train_steps)
     ]
+    if conn is not None:
+        callbacks.append(ConnProgressBar(conn, args.max_steps))
+
     trainer = pl.Trainer(
         accelerator='gpu',
         devices=1,
@@ -115,3 +122,9 @@ if __name__ == '__main__':
     )
 
     trainer.fit(model, dataloader)
+
+    remove_progress_bar()
+
+
+if __name__ == "__main__":
+    main()

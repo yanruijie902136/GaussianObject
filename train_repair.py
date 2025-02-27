@@ -3,6 +3,8 @@ import logging
 import os
 import sys
 
+from progress_bar import *
+
 
 class ColoredFilter(logging.Filter):
     """
@@ -38,7 +40,7 @@ class ColoredFilter(logging.Filter):
         return True
 
 
-def main(args, extras) -> None:
+def train_repair(args, extras, conn=None) -> None:
     # set CUDA_VISIBLE_DEVICES if needed, then import pytorch-lightning
     os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
     env_gpus_str = os.environ.get("CUDA_VISIBLE_DEVICES", None)
@@ -96,7 +98,7 @@ def main(args, extras) -> None:
     # pre load dataset for scene info
     dm = threestudio.find(cfg.data_type)(cfg.data)
     gt_ds = threestudio.find(cfg.dataset_type)(cfg.data, sparse_num=cfg.data.sparse_num)
-    cfg.system.scene_extent = gt_ds.get_scene_extent()['radius'] # type: ignore
+    cfg.system.scene_extent = gt_ds.get_scene_extent()['radius']  # type: ignore
 
     system: BaseSystem = threestudio.find(cfg.system_type)(
         cfg.system, resumed=cfg.resume is not None
@@ -116,8 +118,11 @@ def main(args, extras) -> None:
                 os.path.join(cfg.trial_dir, "configs"),
                 use_version=False,
             ),
-            CustomProgressBar(refresh_rate=1),
         ]
+        if conn is not None:
+            callbacks.append(ConnProgressBar(conn, cfg.trainer["max_steps"]))
+        else:
+            callbacks.append(CustomProgressBar(refresh_rate=1))
 
     def write_to_text(file, lines):
         with open(file, "w") as f:
@@ -151,8 +156,10 @@ def main(args, extras) -> None:
 
     trainer.fit(system, datamodule=dm, ckpt_path=cfg.resume)
 
+    remove_progress_bar()
 
-if __name__ == "__main__":
+
+def main(argv=None, conn=None):
     parser = argparse.ArgumentParser()
     parser.add_argument("--config", required=True, help="path to config file")
     parser.add_argument(
@@ -180,6 +187,13 @@ if __name__ == "__main__":
         help="whether to enable dynamic type checking",
     )
 
-    args, extras = parser.parse_known_args()
+    if argv is None:
+        args, extras = parser.parse_known_args()
+    else:
+        args, extras = parser.parse_known_args(argv)
 
-    main(args, extras)
+    train_repair(args, extras, conn)
+
+
+if __name__ == "__main__":
+    main()

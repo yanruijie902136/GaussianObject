@@ -10,6 +10,7 @@ from dust3r.utils.device import to_cpu, collate_with_cat
 from dust3r.model import AsymmetricCroCo3DStereo, inf  # noqa: F401, needed when loading the model
 from dust3r.utils.misc import invalid_to_nans
 from dust3r.utils.geometry import depthmap_to_pts3d, geotrf
+from progress_bar import *
 
 
 def load_model(model_path, device):
@@ -57,7 +58,7 @@ def loss_of_one_batch(batch, model, criterion, device, symmetrize_batch=False, u
         view1, view2 = make_batch_symmetric(batch)
 
     with torch.cuda.amp.autocast(enabled=bool(use_amp)):
-        pred1, pred2 = model(view1, view2) # pred points and confidence
+        pred1, pred2 = model(view1, view2)  # pred points and confidence
 
         # loss is supposed to be symmetric
         with torch.cuda.amp.autocast(enabled=False):
@@ -80,6 +81,7 @@ def inference(pairs, model, device, batch_size=8):
     for i in tqdm.trange(0, len(pairs), batch_size):
         res = loss_of_one_batch(collate_with_cat(pairs[i:i+batch_size]), model, None, device)
         result.append(to_cpu(res))
+        progress_bar_step(1)
 
     result = collate_with_cat(result, lists=multiple_shapes)
 
